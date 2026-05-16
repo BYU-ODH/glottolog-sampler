@@ -83,6 +83,7 @@
     .status-bar { padding: 8px 12px; border-radius: 5px; font-size: 0.8rem; margin-bottom: 10px; }
     .status-info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
     .status-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .status-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
 
     /* ── Results ── */
     .results-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
@@ -186,6 +187,10 @@ const VALUES_URLS = [
   'https://raw.githubusercontent.com/glottolog/glottolog-cldf/master/cldf/values.csv',
   'https://raw.githubusercontent.com/glottolog/glottolog-cldf/main/cldf/values.csv',
 ];
+// Local vendored fallback used when live fetch fails. The values.csv copy is
+// pre-filtered to only the parameters this app reads (aes, med).
+const FALLBACK_URLS = ['cldf/languages.csv'];
+const FALLBACK_VALUES_URLS = ['cldf/values.csv'];
 
 const AES_ORDER = ['not endangered','threatened','shifting','moribund','nearly extinct','extinct','dormant'];
 const AES_COLORS = {
@@ -317,13 +322,25 @@ async function fetchFirst(urls) {
   return null;
 }
 
+// Exposed so init() can warn the user when cached data is in use.
+let usedCachedData = false;
+
 async function loadData() {
-  const [langsText, valsText] = await Promise.all([
+  let [langsText, valsText] = await Promise.all([
     fetchFirst(URLS),
     fetchFirst(VALUES_URLS),
   ]);
 
-  if (!langsText) throw new Error('Could not fetch languages.csv from Glottolog GitHub.');
+  if (!langsText) {
+    const cached = await fetchFirst(FALLBACK_URLS);
+    if (cached) {
+      langsText = cached;
+      usedCachedData = true;
+      if (!valsText) valsText = await fetchFirst(FALLBACK_VALUES_URLS);
+    }
+  }
+
+  if (!langsText) throw new Error('Could not fetch languages.csv from Glottolog GitHub or local cache.');
 
   const rows = csvToObjects(langsText);
 
@@ -1083,9 +1100,10 @@ function exportCSV() {
 //  Init
 // ═══════════════════════════════════════════════════════════
 
-function setStatus(msg, isError) {
+function setStatus(msg, kind) {
   const el = document.getElementById('status-area');
-  el.innerHTML = `<div class="status-bar ${isError ? 'status-error' : 'status-info'}">${esc(msg)}</div>`;
+  const cls = kind === 'error' ? 'status-error' : kind === 'warn' ? 'status-warn' : 'status-info';
+  el.innerHTML = `<div class="status-bar ${cls}">${esc(msg)}</div>`;
 }
 
 async function init() {
@@ -1093,7 +1111,14 @@ async function init() {
 
   try {
     const count = await loadData();
-    setStatus(`Loaded ${count.toLocaleString()} languages from Glottolog.`, false);
+    if (usedCachedData) {
+      setStatus(
+        `Could not reach Glottolog — loaded ${count.toLocaleString()} languages from a cached copy vendored with this app. The cached data may be out of date; please contact the developers to fix the data fetching function.`,
+        'warn'
+      );
+    } else {
+      setStatus(`Loaded ${count.toLocaleString()} languages from Glottolog.`, 'info');
+    }
     buildUI();
 
     if (urlState) applyUrlState(urlState);
@@ -1103,7 +1128,7 @@ async function init() {
     document.getElementById('link-btn').addEventListener('click', copyLink);
   } catch (err) {
     document.getElementById('axes-container').innerHTML = '';
-    setStatus('Failed to load Glottolog data. Check your connection and reload. (' + err.message + ')', true);
+    setStatus('Failed to load Glottolog data. Check your connection and reload. (' + err.message + ')', 'error');
     console.error(err);
   }
 }
