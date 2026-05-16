@@ -161,6 +161,10 @@
       <button class="link-btn" id="link-btn" title="Copy shareable link to current configuration">⛓ Link</button>
     </div>
     <div class="pool-note" id="pool-note"></div>
+    <div class="bottom-row" style="margin-top:8px;">
+      <button class="link-btn" id="import-btn" title="Import a previously-exported CSV to selectively resample rows">⇪ Import CSV</button>
+      <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
+    </div>
   </div>
 
   <!-- ── Results panel ── -->
@@ -218,6 +222,7 @@ const FSIZE_BINS = [
 // ═══════════════════════════════════════════════════════════
 
 let langs = [];          // processed language objects
+let langById = {};       // glottocode → language object
 let familyNames = {};    // familyId → name
 let familySizes = {};    // familyId → count
 let axisState = {};      // axisId → {mode:'off'|'filter'|'balance', sel:Set}
@@ -410,6 +415,9 @@ async function loadData() {
       countries,
     };
   }).filter(Boolean);
+
+  langById = {};
+  langs.forEach(l => { langById[l.id] = l; });
 
   return langs.length;
 }
@@ -835,12 +843,14 @@ function showResults(sample, poolSize, balAxes) {
         <strong>${sample.length}</strong> languages from pool of
         <strong>${poolSize.toLocaleString()}</strong>${balDesc}
       </span>
+      <button class="export-btn" id="resample-sel-btn" title="Replace the checked rows with newly sampled languages from the same pool">↻ Resample selected</button>
       <button class="export-btn" id="export-btn">Export CSV</button>
     </div>
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
+            <th style="width:1%"><input type="checkbox" id="resample-all" title="Toggle all"></th>
             <th>#</th>
             <th>Language</th>
             <th>Glottocode</th>
@@ -866,6 +876,7 @@ function showResults(sample, poolSize, balAxes) {
       ? lang.countries.slice(0,4).join(', ') + (lang.countries.length > 4 ? '…' : '')
       : '—';
     tr.innerHTML = `
+      <td><input type="checkbox" class="resample-row" data-idx="${i}"></td>
       <td style="color:var(--muted)">${i+1}</td>
       <td><span class="lang-name">${esc(lang.name)}</span></td>
       <td><a href="https://glottolog.org/resource/languoid/id/${esc(lang.id)}" target="_blank" style="color:var(--primary);text-decoration:none;" class="lang-code">${esc(lang.id)}</a></td>
@@ -886,6 +897,10 @@ function showResults(sample, poolSize, balAxes) {
   content.appendChild(buildCiteSection());
 
   document.getElementById('export-btn').addEventListener('click', exportCSV);
+  document.getElementById('resample-sel-btn').addEventListener('click', resampleSelected);
+  document.getElementById('resample-all').addEventListener('change', e => {
+    document.querySelectorAll('.resample-row').forEach(cb => { cb.checked = e.target.checked; });
+  });
 }
 
 function buildDistCards(sample) {
@@ -1077,18 +1092,170 @@ function copyLink() {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  Selective resample
+// ═══════════════════════════════════════════════════════════
+
+function resampleSelected() {
+  const checks = [...document.querySelectorAll('.resample-row:checked')];
+  if (!checks.length) {
+    alert('Check at least one row to replace.');
+    return;
+  }
+  const replaceIdx = checks.map(c => parseInt(c.dataset.idx, 10));
+  const keepIds    = new Set(lastSample.filter((_, i) => !replaceIdx.includes(i)).map(l => l.id));
+
+  const pool    = getFilteredPool().filter(l => !keepIds.has(l.id));
+  const balAxes = Object.entries(axisState).filter(([,s])=>s.mode==='balance').map(([id])=>id);
+
+  // For each slot to replace, try to draw from the same balance cell as the
+  // outgoing language; fall back to anywhere in the remaining pool.
+  const usedNew = new Set();
+  const replacements = replaceIdx.map(idx => {
+    const outgoing = lastSample[idx];
+    let candidates;
+    if (balAxes.length && outgoing) {
+      const cellKey = getCellKey(outgoing, balAxes);
+      candidates = pool.filter(l => !usedNew.has(l.id) && getCellKey(l, balAxes) === cellKey);
+      if (!candidates.length) candidates = pool.filter(l => !usedNew.has(l.id));
+    } else {
+      candidates = pool.filter(l => !usedNew.has(l.id));
+    }
+    if (!candidates.length) return null;
+    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    usedNew.add(pick.id);
+    return pick;
+  });
+
+  const next = lastSample.slice();
+  let unfilled = 0;
+  replaceIdx.forEach((idx, k) => {
+    if (replacements[k]) next[idx] = replacements[k];
+    else unfilled++;
+  });
+
+  lastSample = next;
+  const poolSize = getFilteredPool().length;
+  showResults(lastSample, poolSize, balAxes);
+
+  if (unfilled) {
+    alert(`Resampled ${replaceIdx.length - unfilled} of ${replaceIdx.length} rows. ` +
+          `The current filter pool ran out of unique candidates for ${unfilled} slot(s).`);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Import
+// ═══════════════════════════════════════════════════════════
+
+function importCSV(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const rows = parseCSV(reader.result);
+    if (!rows.length) { alert('CSV is empty.'); return; }
+
+    // Row 1 is reserved for the config URL marker (see exportCSV).
+    let configUrl = null;
+    let dataStart = 0;
+    if (rows[0][0] && rows[0][0].trim().toLowerCase().startsWith('# config-url')) {
+      configUrl = (rows[0][1] || '').trim();
+      dataStart = 1;
+    }
+
+    // Apply config from URL if present.
+    if (configUrl) {
+      try {
+        const u = new URL(configUrl);
+        const fakeSearch = u.search;
+        // parseUrlState reads from location.search, so emulate it locally.
+        const params = new URLSearchParams(fakeSearch);
+        const state  = { n: null, axes: {} };
+        for (const [key, val] of params) {
+          if (key === 'n') state.n = parseInt(val) || null;
+          else if (val === 'balance') state.axes[key] = { mode:'balance', sel:[] };
+          else if (val.startsWith('filter:')) {
+            const sel = val.slice(7).split(',').map(decodeURIComponent).filter(Boolean);
+            state.axes[key] = { mode:'filter', sel };
+          }
+        }
+        resetAxisState();
+        applyUrlState(state);
+      } catch (e) {
+        console.warn('Could not parse config URL from CSV:', e);
+      }
+    } else {
+      alert('No configuration URL found in row 1 of the CSV. The imported sample will use the current axis settings for any resampling.');
+    }
+
+    // Header row + data rows.
+    const headerRow = rows[dataStart] || [];
+    const codeCol   = headerRow.findIndex(h => /glottocode/i.test(h));
+    if (codeCol < 0) { alert('Could not find a "Glottocode" column in the CSV.'); return; }
+
+    const imported = [];
+    const missing  = [];
+    for (let i = dataStart + 1; i < rows.length; i++) {
+      const code = (rows[i][codeCol] || '').trim();
+      if (!code) continue;
+      const lang = langById[code];
+      if (lang) imported.push(lang);
+      else missing.push(code);
+    }
+
+    if (!imported.length) {
+      alert('No rows from the CSV matched languages in the current Glottolog data.');
+      return;
+    }
+    if (missing.length) {
+      console.warn('Imported CSV: glottocodes not found in current data:', missing);
+    }
+
+    lastSample = imported;
+    const balAxes  = Object.entries(axisState).filter(([,s])=>s.mode==='balance').map(([id])=>id);
+    const poolSize = getFilteredPool().length;
+    showResults(lastSample, poolSize, balAxes);
+
+    setStatus(
+      `Imported ${imported.length} languages from CSV` +
+      (missing.length ? ` (${missing.length} glottocode${missing.length===1?'':'s'} not found in current data — skipped)` : '') +
+      '. Check rows to replace, then click "Resample selected".',
+      'info'
+    );
+  };
+  reader.onerror = () => alert('Could not read file.');
+  reader.readAsText(file);
+}
+
+function resetAxisState() {
+  for (const axId of Object.keys(axisState)) {
+    const st = axisState[axId];
+    st.sel.clear();
+    const list = document.getElementById('optlist-' + axId);
+    if (list) list.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+    const wrap = document.getElementById('axis-' + axId);
+    if (wrap) {
+      const modeRow = wrap.querySelector('.mode-row');
+      if (modeRow) setMode(axId, 'off', wrap, modeRow);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
 //  Export
 // ═══════════════════════════════════════════════════════════
 
 function exportCSV() {
   const headers = ['#','Name','Glottocode','ISO639-3','Macroarea','Family','FamilySize','FamilySizeBin','Endangerment','MED','Countries'];
   const q = s => `"${String(s||'').replace(/"/g,'""')}"`;
+  const configUrl = location.origin + encodeState();
+  // Row 1 is reserved for the sampler configuration URL so the CSV can be
+  // re-imported and selectively resampled with the same axis/N configuration.
+  const configRow = [q('# config-url'), q(configUrl)].join(',');
   const rows = lastSample.map((l, i) => [
     i+1, l.name, l.id, l.iso, l.macroarea, l.familyName,
     l.famSize, l.famSizeBin, l.aes, l.med, l.countries.join(';'),
   ].map(q).join(','));
 
-  const csv  = [headers.map(q).join(','), ...rows].join('\n');
+  const csv  = [configRow, headers.map(q).join(','), ...rows].join('\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
@@ -1126,6 +1293,13 @@ async function init() {
     document.getElementById('gen-btn').addEventListener('click', generate);
     document.getElementById('sample-n').addEventListener('input', updatePoolNote);
     document.getElementById('link-btn').addEventListener('click', copyLink);
+
+    const fileInput = document.getElementById('import-file');
+    document.getElementById('import-btn').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) importCSV(fileInput.files[0]);
+      fileInput.value = '';
+    });
   } catch (err) {
     document.getElementById('axes-container').innerHTML = '';
     setStatus('Failed to load Glottolog data. Check your connection and reload. (' + err.message + ')', 'error');
