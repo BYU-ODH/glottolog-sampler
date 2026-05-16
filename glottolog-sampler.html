@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Glottolog Language Sampler</title>
+  <style>
+    :root {
+      --bg: #f5f6f8;
+      --surface: #ffffff;
+      --border: #e0e3e8;
+      --text: #1a1d23;
+      --muted: #6b7280;
+      --primary: #2563eb;
+      --primary-h: #1d4ed8;
+      --radius: 8px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
+
+    /* ── Header ── */
+    header { background: var(--primary); color: #fff; padding: 14px 20px; display: flex; align-items: baseline; gap: 12px; }
+    header h1 { font-size: 1.1rem; font-weight: 700; }
+    header span { font-size: 0.8rem; opacity: .8; }
+
+    /* ── Layout ── */
+    .layout { display: grid; grid-template-columns: 360px 1fr; gap: 12px; padding: 12px; max-width: 1500px; margin: 0 auto; align-items: start; }
+    @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+
+    /* ── Panel ── */
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+    .panel-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 12px; }
+
+    /* ── Axis ── */
+    .axis { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; }
+    .axis-head { display: flex; align-items: center; padding: 7px 10px; cursor: pointer; gap: 8px; user-select: none; }
+    .axis-head:hover { background: #f8f9fb; }
+    .axis-label { font-weight: 600; flex: 1; }
+    .axis-summary { font-size: 0.75rem; color: var(--muted); margin-right: 6px; }
+    .chevron { font-size: 0.7rem; color: var(--muted); transition: transform .15s; }
+    .axis.open .chevron { transform: rotate(90deg); }
+
+    .mode-row { display: flex; gap: 2px; }
+    .mode-btn { font-size: 0.7rem; padding: 2px 7px; border: 1px solid var(--border); border-radius: 4px; background: #fff; color: var(--muted); cursor: pointer; white-space: nowrap; }
+    .mode-btn.active-off   { background: #f3f4f6; color: var(--muted); border-color: #d1d5db; }
+    .mode-btn.active-filter{ background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+    .mode-btn.active-balance{ background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+
+    .axis-body { padding: 8px 10px 10px; display: none; border-top: 1px solid var(--border); }
+    .axis.open .axis-body { display: block; }
+
+    .quick-row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+    .quick-chip { font-size: 0.72rem; color: var(--primary); text-decoration: underline; cursor: pointer; }
+    .quick-chip:hover { color: var(--primary-h); }
+
+    .search-box { width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 0.85rem; margin-bottom: 6px; }
+    .search-box:focus { outline: none; border-color: var(--primary); }
+
+    .opt-list { max-height: 170px; overflow-y: auto; border: 1px solid var(--border); border-radius: 5px; }
+    .opt-item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; cursor: pointer; }
+    .opt-item:hover { background: #f8f9fb; }
+    .opt-item + .opt-item { border-top: 1px solid #f0f2f5; }
+    .opt-item input[type=checkbox] { cursor: pointer; flex-shrink: 0; }
+    .opt-item.disabled { opacity: .45; pointer-events: none; }
+    .opt-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .opt-name { flex: 1; line-height: 1.3; }
+    .opt-count { font-size: 0.72rem; color: var(--muted); background: #f3f4f6; padding: 1px 5px; border-radius: 8px; flex-shrink: 0; }
+
+    .balance-hint { font-size: 0.78rem; color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 4px; padding: 5px 8px; margin-top: 6px; }
+
+    /* ── Bottom row ── */
+    .bottom-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+    .bottom-row label { font-size: 0.85rem; color: var(--muted); flex-shrink: 0; }
+    .count-inp { width: 66px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 0.9rem; text-align: center; }
+    .count-inp:focus { outline: none; border-color: var(--primary); }
+    .generate-btn { flex: 1; padding: 7px; background: var(--primary); color: #fff; border: none; border-radius: 5px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+    .generate-btn:hover { background: var(--primary-h); }
+    .generate-btn:disabled { background: #9ca3af; cursor: not-allowed; }
+
+    .pool-note { font-size: 0.75rem; color: var(--muted); margin-top: 6px; text-align: right; }
+
+    /* ── Status ── */
+    .status-bar { padding: 8px 12px; border-radius: 5px; font-size: 0.8rem; margin-bottom: 10px; }
+    .status-info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+    .status-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+
+    /* ── Results ── */
+    .results-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
+    .results-count { font-size: 0.85rem; color: var(--muted); }
+    .export-btn { padding: 4px 10px; font-size: 0.78rem; border: 1px solid var(--border); border-radius: 5px; background: #fff; cursor: pointer; }
+    .export-btn:hover { background: #f3f4f6; }
+    .link-btn { padding: 7px 10px; border: 1px solid var(--border); border-radius: 5px; background: #fff; cursor: pointer; font-size: 0.82rem; white-space: nowrap; flex-shrink: 0; }
+    .link-btn:hover { background: #f3f4f6; }
+    .link-btn.copied { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
+
+    .table-wrap { overflow-x: auto; max-height: calc(100vh - 160px); overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { position: sticky; top: 0; background: #f8f9fb; padding: 7px 10px; text-align: left; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border-bottom: 2px solid var(--border); white-space: nowrap; }
+    tbody td { padding: 7px 10px; border-bottom: 1px solid #f0f2f5; vertical-align: top; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #fafbfc; }
+
+    .aes-pill { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.72rem; font-weight: 600; color: #fff; white-space: nowrap; }
+    .lang-name { font-weight: 600; }
+    .lang-code { font-family: monospace; font-size: 0.78rem; color: var(--muted); }
+
+    /* ── Distribution cards ── */
+    .dist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-top: 12px; }
+    .dist-card { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+    .dist-card h4 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
+    .dist-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+    .dist-bar { flex: 1; height: 5px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
+    .dist-fill { height: 100%; background: var(--primary); border-radius: 3px; }
+    .dist-label { font-size: 0.75rem; flex-basis: 120px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dist-n { font-size: 0.72rem; color: var(--muted); flex-basis: 24px; text-align: right; flex-shrink: 0; }
+
+    .empty-state { text-align: center; padding: 48px 20px; color: var(--muted); }
+    .empty-state p { margin-bottom: 6px; }
+
+    /* ── Citation ── */
+    .cite-section { margin-top: 14px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+    .cite-header { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: #f8f9fb; border-bottom: 1px solid var(--border); }
+    .cite-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); flex: 1; }
+    .cite-tabs { display: flex; gap: 2px; }
+    .cite-tab { font-size: 0.75rem; padding: 3px 9px; border: 1px solid var(--border); border-radius: 4px; background: #fff; color: var(--muted); cursor: pointer; }
+    .cite-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .cite-copy { font-size: 0.75rem; padding: 3px 9px; border: 1px solid var(--border); border-radius: 4px; background: #fff; cursor: pointer; }
+    .cite-copy:hover { background: #f3f4f6; }
+    .cite-copy.copied { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
+    .cite-text { padding: 10px 14px; font-size: 0.875rem; line-height: 1.65; color: var(--text); font-family: Georgia, 'Times New Roman', serif; }
+
+    .spinner-wrap { text-align: center; padding: 40px; }
+    .spinner { width: 36px; height: 36px; border: 3px solid #e5e7eb; border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Glottolog Language Sampler</h1>
+  <span>Representative sampling across linguistic diversity axes</span>
+</header>
+
+<div class="layout">
+
+  <!-- ── Config panel ── -->
+  <div class="panel" id="config-panel">
+    <div class="panel-title">Sampling Configuration</div>
+    <div id="status-area"></div>
+    <div id="axes-container">
+      <div class="spinner-wrap">
+        <div class="spinner"></div>
+        <p style="color:var(--muted);font-size:.85rem;">Fetching Glottolog data…</p>
+      </div>
+    </div>
+    <div class="bottom-row">
+      <label for="sample-n">N =</label>
+      <input type="number" id="sample-n" class="count-inp" value="30" min="1" max="2000">
+      <button class="generate-btn" id="gen-btn" disabled>Sample</button>
+      <button class="link-btn" id="link-btn" title="Copy shareable link to current configuration">⛓ Link</button>
+    </div>
+    <div class="pool-note" id="pool-note"></div>
+  </div>
+
+  <!-- ── Results panel ── -->
+  <div class="panel" id="results-panel">
+    <div id="results-placeholder" class="empty-state">
+      <p style="font-size:1rem;font-weight:600;">No sample yet</p>
+      <p>Configure axes on the left, then click <strong>Sample</strong>.</p>
+    </div>
+    <div id="results-content" style="display:none;"></div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  Constants
+// ═══════════════════════════════════════════════════════════
+
+const URLS = [
+  'https://raw.githubusercontent.com/glottolog/glottolog-cldf/master/cldf/languages.csv',
+  'https://raw.githubusercontent.com/glottolog/glottolog-cldf/main/cldf/languages.csv',
+];
+const VALUES_URLS = [
+  'https://raw.githubusercontent.com/glottolog/glottolog-cldf/master/cldf/values.csv',
+  'https://raw.githubusercontent.com/glottolog/glottolog-cldf/main/cldf/values.csv',
+];
+
+const AES_ORDER = ['not endangered','threatened','shifting','moribund','nearly extinct','extinct','dormant'];
+const AES_COLORS = {
+  'not endangered':'#166534','threatened':'#3f6212','shifting':'#854d0e',
+  'moribund':'#9a3412','nearly extinct':'#7f1d1d','extinct':'#581c87','dormant':'#1e3a5f',
+  'unknown':'#6b7280',
+};
+
+const MED_ORDER = [
+  'long grammar','grammar','grammar sketch','phonology or text',
+  'wordlist or short description','second-hand','no description',
+];
+
+const FSIZE_BINS = [
+  {label:'Isolate',       min:1,   max:1},
+  {label:'Small (2–5)',   min:2,   max:5},
+  {label:'Medium (6–25)', min:6,   max:25},
+  {label:'Large (26–100)',min:26,  max:100},
+  {label:'Major (101–500)',min:101, max:500},
+  {label:'Giant (500+)', min:501, max:Infinity},
+];
+
+// ═══════════════════════════════════════════════════════════
+//  State
+// ═══════════════════════════════════════════════════════════
+
+let langs = [];          // processed language objects
+let familyNames = {};    // familyId → name
+let familySizes = {};    // familyId → count
+let axisState = {};      // axisId → {mode:'off'|'filter'|'balance', sel:Set}
+let lastSample = [];
+
+// ═══════════════════════════════════════════════════════════
+//  CSV parser (RFC-4180 compliant)
+// ═══════════════════════════════════════════════════════════
+
+function parseCSV(text) {
+  const rows = [];
+  let pos = 0;
+  const len = text.length;
+
+  while (pos < len) {
+    const row = [];
+    while (true) {
+      let field = '';
+      if (pos < len && text[pos] === '"') {
+        pos++;
+        while (pos < len) {
+          if (text[pos] === '"') {
+            if (text[pos+1] === '"') { field += '"'; pos += 2; }
+            else { pos++; break; }
+          } else { field += text[pos++]; }
+        }
+      } else {
+        while (pos < len && text[pos] !== ',' && text[pos] !== '\r' && text[pos] !== '\n') {
+          field += text[pos++];
+        }
+      }
+      row.push(field);
+      if (pos >= len || text[pos] === '\r' || text[pos] === '\n') break;
+      pos++; // comma
+    }
+    if (pos < len && text[pos] === '\r') pos++;
+    if (pos < len && text[pos] === '\n') pos++;
+    if (row.length > 1 || row[0] !== '') rows.push(row);
+  }
+  return rows;
+}
+
+function csvToObjects(text) {
+  const rows = parseCSV(text);
+  if (!rows.length) return [];
+  const headers = rows[0].map(h => h.trim());
+  return rows.slice(1).map(row => {
+    const o = {};
+    headers.forEach((h, i) => o[h] = (row[i] || '').trim());
+    return o;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Helpers
+// ═══════════════════════════════════════════════════════════
+
+function pick(obj, ...keys) {
+  for (const k of keys) if (obj[k] !== undefined && obj[k] !== '') return obj[k];
+  return '';
+}
+
+function getFamilySizeBin(n) {
+  for (const b of FSIZE_BINS) if (n >= b.min && n <= b.max) return b.label;
+  return 'Unknown';
+}
+
+const AES_ALIASES = {
+  'safe':'not endangered','1':'not endangered','aes-1':'not endangered',
+  '2':'threatened','aes-2':'threatened',
+  '3':'shifting','aes-3':'shifting',
+  '4':'moribund','aes-4':'moribund',
+  '5':'nearly extinct','aes-5':'nearly extinct',
+  '6':'extinct','6a':'extinct','aes-6':'extinct','aes-6a':'extinct',
+  '7':'dormant','aes-7':'dormant',
+};
+
+function normalizeAES(raw) {
+  const s = raw.toLowerCase().trim();
+  if (AES_ALIASES[s]) return AES_ALIASES[s];
+  for (const level of AES_ORDER) if (s === level || s.includes(level)) return level;
+  return s || 'unknown';
+}
+
+function normalizeMED(raw) {
+  const s = raw.toLowerCase().trim();
+  for (const level of MED_ORDER) if (s.includes(level.split(' ')[0]) || s === level) return level;
+  return s || 'unknown';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Data loading
+// ═══════════════════════════════════════════════════════════
+
+async function fetchFirst(urls) {
+  for (const url of urls) {
+    try {
+      const r = await fetch(url);
+      if (r.ok) return await r.text();
+    } catch {}
+  }
+  return null;
+}
+
+async function loadData() {
+  const [langsText, valsText] = await Promise.all([
+    fetchFirst(URLS),
+    fetchFirst(VALUES_URLS),
+  ]);
+
+  if (!langsText) throw new Error('Could not fetch languages.csv from Glottolog GitHub.');
+
+  const rows = csvToObjects(langsText);
+
+  // Parse values.csv for AES and MED overrides
+  const aesMap = {};  // langId → aes string
+  const medMap = {};  // langId → med string
+  if (valsText) {
+    const vrows = csvToObjects(valsText);
+    for (const v of vrows) {
+      const lid = pick(v, 'Language_ID', 'Languoid_ID');
+      const pid = (pick(v, 'Parameter_ID') || '').toLowerCase();
+      const val = pick(v, 'Value', 'Code_ID');
+      if (!lid) continue;
+      if (pid === 'aes' || pid.includes('endangerment')) aesMap[lid] = normalizeAES(val);
+      if (pid === 'med' || pid.includes('description')) medMap[lid] = normalizeMED(val);
+    }
+  }
+
+  // Build family name map from family-level rows
+  const familyRows = rows.filter(r => (pick(r,'Level','level') || '').toLowerCase() === 'family');
+  familyRows.forEach(f => {
+    const id = pick(f, 'ID', 'Glottocode');
+    if (id) familyNames[id] = pick(f, 'Name', 'name') || id;
+  });
+
+  // Build language objects
+  const rawLangs = rows.filter(r => (pick(r,'Level','level') || '').toLowerCase() === 'language');
+
+  // Count languages per family
+  const fCount = {};
+  rawLangs.forEach(l => {
+    const fid = pick(l, 'Family_ID', 'family_id') || pick(l,'ID','Glottocode');
+    fCount[fid] = (fCount[fid] || 0) + 1;
+  });
+  familySizes = fCount;
+
+  langs = rawLangs.map(l => {
+    const id    = pick(l, 'ID', 'Glottocode', 'glottocode');
+    const name  = pick(l, 'Name', 'name');
+    if (!id || !name) return null;
+
+    const familyId   = pick(l, 'Family_ID', 'family_id') || null;
+    const familyName = familyId
+      ? (familyNames[familyId] || familyId)
+      : 'Isolate';
+    const famSize    = familyId ? (fCount[familyId] || 1) : 1;
+
+    // AES: prefer values.csv, then languages.csv columns
+    const rawAes = aesMap[id] || normalizeAES(pick(l,'AES_status','Status','Endangerment','endangerment','aes','status'));
+    // MED: prefer values.csv
+    const rawMed = medMap[id] || normalizeMED(pick(l,'MED','Description','med','description','Most_extensive_description'));
+
+    const countryRaw = pick(l, 'Country_IDs', 'Countries', 'country_ids', 'Country_ID');
+    const countries  = countryRaw ? countryRaw.split(/[\s,;]+/).map(s=>s.trim()).filter(Boolean) : [];
+
+    return {
+      id,
+      name,
+      macroarea:    pick(l,'Macroarea','macroarea') || 'Unknown',
+      iso:          pick(l,'ISO639P3code','ISO_code','iso','iso639p3code') || '',
+      familyId,
+      familyName,
+      famSize,
+      famSizeBin:   getFamilySizeBin(famSize),
+      aes:          rawAes || 'unknown',
+      med:          rawMed || 'unknown',
+      countries,
+    };
+  }).filter(Boolean);
+
+  return langs.length;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  UI building
+// ═══════════════════════════════════════════════════════════
+
+function countBy(arr, fn) {
+  const m = {};
+  arr.forEach(x => { const k = fn(x); if (k) m[k] = (m[k]||0)+1; });
+  return m;
+}
+
+function buildUI() {
+  // Compute axis options
+  const macroareas = [...new Set(langs.map(l=>l.macroarea))].sort();
+
+  // Family: sort by size desc
+  const famCounts = countBy(langs, l=>l.familyName);
+  const families  = Object.keys(famCounts).sort((a,b)=>famCounts[b]-famCounts[a]);
+  const top20Fam  = families.slice(0, 20);
+
+  const fsizeBins = FSIZE_BINS.map(b=>b.label).filter(b=>langs.some(l=>l.famSizeBin===b));
+
+  const ctryCounts = {};
+  langs.forEach(l=>l.countries.forEach(c=>{ ctryCounts[c]=(ctryCounts[c]||0)+1; }));
+  const countries = Object.keys(ctryCounts).sort((a,b)=>ctryCounts[b]-ctryCounts[a]);
+
+  const aesLevels = AES_ORDER.filter(a=>langs.some(l=>l.aes===a));
+  // Add 'unknown' if present
+  if (langs.some(l=>l.aes==='unknown')) aesLevels.push('unknown');
+
+  const medLevels = MED_ORDER.filter(m=>langs.some(l=>l.med===m));
+  if (langs.some(l=>l.med==='unknown')) medLevels.push('unknown');
+
+  const AXES = [
+    {
+      id: 'macroarea', name: 'Macroarea',
+      options: macroareas,
+      counts: countBy(langs, l=>l.macroarea),
+    },
+    {
+      id: 'familyName', name: 'Family',
+      options: families,
+      counts: famCounts,
+      searchable: true,
+      quickLinks: [
+        { label: 'Top 20 families', vals: top20Fam },
+        { label: 'Select all', vals: families },
+        { label: 'Clear', vals: [] },
+      ],
+    },
+    {
+      id: 'famSizeBin', name: 'Family Size',
+      options: fsizeBins,
+      counts: countBy(langs, l=>l.famSizeBin),
+    },
+    {
+      id: 'countries', name: 'Country',
+      options: countries,
+      counts: ctryCounts,
+      searchable: true,
+      isArray: true,
+    },
+    {
+      id: 'aes', name: 'Endangerment',
+      options: aesLevels,
+      counts: countBy(langs, l=>l.aes),
+      colors: AES_COLORS,
+    },
+    {
+      id: 'med', name: 'Documentation (MED)',
+      options: medLevels,
+      counts: countBy(langs, l=>l.med),
+    },
+  ];
+
+  AXES.forEach(ax => {
+    axisState[ax.id] = { mode: 'off', sel: new Set() };
+  });
+
+  const container = document.getElementById('axes-container');
+  container.innerHTML = '';
+  AXES.forEach(ax => container.appendChild(makeAxisEl(ax)));
+
+  document.getElementById('gen-btn').disabled = false;
+  updatePoolNote();
+}
+
+function makeAxisEl(ax) {
+  const wrap = document.createElement('div');
+  wrap.className = 'axis';
+  wrap.id = 'axis-' + ax.id;
+
+  // ── Head ──
+  const head = document.createElement('div');
+  head.className = 'axis-head';
+
+  const label = document.createElement('span');
+  label.className = 'axis-label';
+  label.textContent = ax.name;
+
+  const summary = document.createElement('span');
+  summary.className = 'axis-summary';
+  summary.id = 'summary-' + ax.id;
+  summary.textContent = ax.options.length + ' categories';
+
+  const modeRow = document.createElement('div');
+  modeRow.className = 'mode-row';
+  ['off','filter','balance'].forEach(m => {
+    const btn = document.createElement('button');
+    btn.className = 'mode-btn active-off';
+    btn.textContent = m === 'off' ? 'Off' : m === 'filter' ? 'Filter' : 'Balance';
+    btn.title = m === 'balance' ? 'Distribute samples across all categories of this axis' : '';
+    btn.dataset.mode = m;
+    if (m === 'off') btn.classList.add('active-off');
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      setMode(ax.id, m, wrap, modeRow);
+    });
+    modeRow.appendChild(btn);
+  });
+
+  const chevron = document.createElement('span');
+  chevron.className = 'chevron';
+  chevron.textContent = '▶';
+
+  head.appendChild(label);
+  head.appendChild(summary);
+  head.appendChild(modeRow);
+  head.appendChild(chevron);
+  head.addEventListener('click', () => { wrap.classList.toggle('open'); updatePoolNote(); });
+
+  // ── Body ──
+  const body = document.createElement('div');
+  body.className = 'axis-body';
+
+  // Quick links
+  if (ax.quickLinks) {
+    const qlRow = document.createElement('div');
+    qlRow.className = 'quick-row';
+    ax.quickLinks.forEach(ql => {
+      const chip = document.createElement('span');
+      chip.className = 'quick-chip';
+      chip.textContent = ql.label;
+      chip.addEventListener('click', () => applyQuickLink(ax.id, ql.vals, body));
+      qlRow.appendChild(chip);
+    });
+    body.appendChild(qlRow);
+  }
+
+  // Search
+  if (ax.searchable) {
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'search-box';
+    inp.placeholder = 'Search ' + ax.name + '…';
+    inp.addEventListener('input', () => filterList(inp.value, list));
+    body.appendChild(inp);
+  }
+
+  // Option list
+  const list = document.createElement('div');
+  list.className = 'opt-list';
+  list.id = 'optlist-' + ax.id;
+
+  ax.options.forEach(opt => {
+    const item = document.createElement('label');
+    item.className = 'opt-item';
+    item.dataset.val = opt;
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = opt;
+    cb.addEventListener('change', () => {
+      const st = axisState[ax.id];
+      if (cb.checked) st.sel.add(opt);
+      else st.sel.delete(opt);
+      updateAxisSummary(ax.id);
+      updatePoolNote();
+    });
+
+    if (ax.colors) {
+      const dot = document.createElement('span');
+      dot.className = 'opt-dot';
+      dot.style.background = ax.colors[opt] || '#9ca3af';
+      item.appendChild(dot);
+    }
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'opt-name';
+    nameEl.textContent = opt;
+
+    const countEl = document.createElement('span');
+    countEl.className = 'opt-count';
+    countEl.textContent = (ax.counts[opt] || 0).toLocaleString();
+
+    item.appendChild(cb);
+    item.appendChild(nameEl);
+    item.appendChild(countEl);
+    list.appendChild(item);
+  });
+
+  body.appendChild(list);
+
+  // Balance hint
+  const hint = document.createElement('div');
+  hint.className = 'balance-hint';
+  hint.id = 'hint-' + ax.id;
+  hint.textContent = 'Samples will be distributed evenly across all ' + ax.options.length + ' categories.';
+  hint.style.display = 'none';
+  body.appendChild(hint);
+
+  wrap.appendChild(head);
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function setMode(axId, mode, wrap, modeRow) {
+  axisState[axId].mode = mode;
+
+  modeRow.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.className = 'mode-btn active-' + (btn.dataset.mode === mode ? mode : 'off');
+    // off button always gets active-off styling when not selected
+    if (btn.dataset.mode !== mode) btn.className = 'mode-btn';
+    if (btn.dataset.mode === mode) btn.classList.add('active-' + mode);
+  });
+
+  // Open body when activating
+  if (mode !== 'off') wrap.classList.add('open');
+
+  // Toggle checkbox usability
+  const list = document.getElementById('optlist-' + axId);
+  if (list) {
+    const disabled = mode === 'balance';
+    list.querySelectorAll('.opt-item').forEach(item => {
+      item.classList.toggle('disabled', disabled);
+      const cb = item.querySelector('input');
+      if (cb) cb.disabled = disabled;
+    });
+    if (mode === 'balance') {
+      axisState[axId].sel.clear();
+      list.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+    }
+  }
+
+  const hint = document.getElementById('hint-' + axId);
+  if (hint) hint.style.display = mode === 'balance' ? 'block' : 'none';
+
+  updateAxisSummary(axId);
+  updatePoolNote();
+}
+
+function updateAxisSummary(axId) {
+  const st  = axisState[axId];
+  const el  = document.getElementById('summary-' + axId);
+  if (!el) return;
+  if (st.mode === 'balance') el.textContent = '⚖ balance';
+  else if (st.mode === 'filter' && st.sel.size > 0) el.textContent = '▼ ' + st.sel.size + ' selected';
+  else el.textContent = '';
+}
+
+function filterList(q, listEl) {
+  const lq = q.toLowerCase();
+  listEl.querySelectorAll('.opt-item').forEach(item => {
+    item.style.display = item.dataset.val.toLowerCase().includes(lq) ? '' : 'none';
+  });
+}
+
+function applyQuickLink(axId, vals, body) {
+  const st = axisState[axId];
+  if (st.mode !== 'filter') return;
+  st.sel.clear();
+  const list = body.querySelector('.opt-list');
+  if (!list) return;
+  list.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
+  vals.forEach(v => {
+    st.sel.add(v);
+    const cb = list.querySelector(`input[value=${CSS.escape(v)}]`);
+    if (cb) cb.checked = true;
+  });
+  updateAxisSummary(axId);
+  updatePoolNote();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Pool size note
+// ═══════════════════════════════════════════════════════════
+
+function updatePoolNote() {
+  const pool = getFilteredPool();
+  const n    = parseInt(document.getElementById('sample-n').value) || 30;
+  const note = document.getElementById('pool-note');
+  note.textContent = `Pool: ${pool.length.toLocaleString()} languages available${pool.length < n ? ' (fewer than N — will return all)' : ''}`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Filtering
+// ═══════════════════════════════════════════════════════════
+
+function langMatchesAxis(lang, axId, sel) {
+  if (sel.size === 0) return true;
+  if (axId === 'countries') return lang.countries.some(c => sel.has(c));
+  return sel.has(lang[axId]);
+}
+
+function getFilteredPool() {
+  return langs.filter(lang => {
+    for (const [axId, st] of Object.entries(axisState)) {
+      if (st.mode === 'filter' && st.sel.size > 0) {
+        if (!langMatchesAxis(lang, axId, st.sel)) return false;
+      }
+    }
+    return true;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Sampling
+// ═══════════════════════════════════════════════════════════
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function randomSample(arr, n) {
+  if (arr.length <= n) return [...arr];
+  return shuffle(arr).slice(0, n);
+}
+
+function getCellKey(lang, balAxes) {
+  return balAxes.map(axId => {
+    if (axId === 'countries') return lang.countries[0] || '__none__';
+    return lang[axId] || '__none__';
+  }).join('\x00');
+}
+
+function stratifiedSample(pool, balAxes, n) {
+  if (!balAxes.length) return randomSample(pool, n);
+  if (!pool.length)    return [];
+  if (pool.length <= n) return shuffle(pool);
+
+  // Group into cells
+  const cells = new Map();
+  pool.forEach(lang => {
+    const key = getCellKey(lang, balAxes);
+    if (!cells.has(key)) cells.set(key, []);
+    cells.get(key).push(lang);
+  });
+
+  const cellList = [...cells.entries()];
+  const numCells = cellList.length;
+
+  // Allocate: start with floor(n/cells) per cell, distribute remainder to largest cells
+  const base    = Math.floor(n / numCells);
+  const extra   = n - base * numCells;
+
+  // Sort cells by size desc for remainder allocation
+  cellList.sort((a, b) => b[1].length - a[1].length);
+
+  const selected = [];
+  const seen     = new Set();
+
+  cellList.forEach(([, cellLangs], idx) => {
+    const quota = base + (idx < extra ? 1 : 0);
+    const picks  = randomSample(cellLangs, quota);
+    picks.forEach(l => {
+      if (!seen.has(l.id)) { seen.add(l.id); selected.push(l); }
+    });
+  });
+
+  // Fill any shortfall (some cells too small)
+  if (selected.length < n) {
+    const remaining = pool.filter(l => !seen.has(l.id));
+    randomSample(remaining, n - selected.length).forEach(l => {
+      seen.add(l.id); selected.push(l);
+    });
+  }
+
+  // Trim if over
+  return selected.length > n ? randomSample(selected, n) : selected;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Generate
+// ═══════════════════════════════════════════════════════════
+
+function generate() {
+  const n        = Math.max(1, parseInt(document.getElementById('sample-n').value) || 30);
+  const pool     = getFilteredPool();
+  const balAxes  = Object.entries(axisState).filter(([,s])=>s.mode==='balance').map(([id])=>id);
+
+  lastSample = stratifiedSample(pool, balAxes, n);
+  showResults(lastSample, pool.length, balAxes);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Display
+// ═══════════════════════════════════════════════════════════
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function showResults(sample, poolSize, balAxes) {
+  document.getElementById('results-placeholder').style.display = 'none';
+  const content = document.getElementById('results-content');
+  content.style.display = 'block';
+
+  const balDesc = balAxes.length
+    ? ` · balanced across: <strong>${balAxes.join(', ')}</strong>`
+    : ' · random sample';
+
+  content.innerHTML = `
+    <div class="results-meta">
+      <span class="results-count">
+        <strong>${sample.length}</strong> languages from pool of
+        <strong>${poolSize.toLocaleString()}</strong>${balDesc}
+      </span>
+      <button class="export-btn" id="export-btn">Export CSV</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Language</th>
+            <th>Glottocode</th>
+            <th>Macroarea</th>
+            <th>Family</th>
+            <th>Fam. Size</th>
+            <th>Endangerment</th>
+            <th>Documentation</th>
+            <th>Countries</th>
+          </tr>
+        </thead>
+        <tbody id="result-tbody"></tbody>
+      </table>
+    </div>
+    <div class="dist-grid" id="dist-grid"></div>
+  `;
+
+  const tbody = document.getElementById('result-tbody');
+  sample.forEach((lang, i) => {
+    const tr  = document.createElement('tr');
+    const col = AES_COLORS[lang.aes] || '#6b7280';
+    const ctrs = lang.countries.length
+      ? lang.countries.slice(0,4).join(', ') + (lang.countries.length > 4 ? '…' : '')
+      : '—';
+    tr.innerHTML = `
+      <td style="color:var(--muted)">${i+1}</td>
+      <td><span class="lang-name">${esc(lang.name)}</span></td>
+      <td><a href="https://glottolog.org/resource/languoid/id/${esc(lang.id)}" target="_blank" style="color:var(--primary);text-decoration:none;" class="lang-code">${esc(lang.id)}</a></td>
+      <td>${esc(lang.macroarea)}</td>
+      <td>${esc(lang.familyName)}</td>
+      <td>${esc(lang.famSizeBin)}</td>
+      <td><span class="aes-pill" style="background:${col}">${esc(lang.aes)}</span></td>
+      <td style="font-size:.8rem">${esc(lang.med)}</td>
+      <td style="font-size:.8rem">${esc(ctrs)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // Distribution cards
+  buildDistCards(sample);
+
+  // Citation
+  content.appendChild(buildCiteSection());
+
+  document.getElementById('export-btn').addEventListener('click', exportCSV);
+}
+
+function buildDistCards(sample) {
+  const grid = document.getElementById('dist-grid');
+  if (!grid) return;
+
+  const DIST_AXES = [
+    { id: 'macroarea', label: 'Macroarea' },
+    { id: 'famSizeBin', label: 'Family Size' },
+    { id: 'aes', label: 'Endangerment' },
+    { id: 'med', label: 'Documentation' },
+  ];
+
+  DIST_AXES.forEach(ax => {
+    const counts = {};
+    sample.forEach(l => {
+      const v = ax.id === 'countries' ? (l.countries[0]||'unknown') : (l[ax.id]||'unknown');
+      counts[v] = (counts[v]||0)+1;
+    });
+    const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+    const maxV   = sorted[0]?.[1] || 1;
+
+    const card = document.createElement('div');
+    card.className = 'dist-card';
+    card.innerHTML = `<h4>${ax.label}</h4>`;
+
+    sorted.forEach(([key, cnt]) => {
+      const pct  = (cnt / maxV * 100).toFixed(0);
+      const color = ax.id === 'aes' ? (AES_COLORS[key]||'#2563eb') : '#2563eb';
+      const row  = document.createElement('div');
+      row.className = 'dist-row';
+      row.innerHTML = `
+        <span class="dist-label" title="${esc(key)}">${esc(key)}</span>
+        <div class="dist-bar"><div class="dist-fill" style="width:${pct}%;background:${color}"></div></div>
+        <span class="dist-n">${cnt}</span>
+      `;
+      card.appendChild(row);
+    });
+
+    grid.appendChild(card);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Citation
+// ═══════════════════════════════════════════════════════════
+
+function buildCiteSection() {
+  const today = new Date().toLocaleDateString('en-US', {year:'numeric', month:'long', day:'numeric'});
+  const year  = new Date().getFullYear();
+
+  // URL = current page base + the encoded settings GET string
+  const queryString = encodeState().replace(/^[^?]*/, '');
+  const url = location.href.split('?')[0] + queryString;
+
+  const cites = {
+    lsa: `[Author]. ${year}. Glottolog Language Sampler [Computer software]. ${url}. (Accessed ${today}.)`,
+    apa: `[Author]. (${year}). Glottolog Language Sampler [Computer software]. ${url}`,
+    mla: `[Author]. "Glottolog Language Sampler." ${year}, ${url}. Accessed ${today}.`,
+  };
+
+  let current = 'lsa';
+
+  const section = document.createElement('div');
+  section.className = 'cite-section';
+
+  const header = document.createElement('div');
+  header.className = 'cite-header';
+  header.innerHTML = `
+    <span class="cite-title">How to cite</span>
+    <div class="cite-tabs"></div>
+    <button class="cite-copy">Copy</button>
+  `;
+
+  const tabsEl  = header.querySelector('.cite-tabs');
+  const copyBtn = header.querySelector('.cite-copy');
+
+  ['lsa','apa','mla'].forEach(style => {
+    const btn = document.createElement('button');
+    btn.className = 'cite-tab' + (style === 'lsa' ? ' active' : '');
+    btn.textContent = style.toUpperCase();
+    btn.addEventListener('click', () => {
+      tabsEl.querySelectorAll('.cite-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      current = style;
+      textEl.textContent = cites[current];
+    });
+    tabsEl.appendChild(btn);
+  });
+
+  copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(cites[current]).then(() => {
+      copyBtn.textContent = '✓ Copied';
+      copyBtn.classList.add('copied');
+      setTimeout(() => { copyBtn.textContent = 'Copy'; copyBtn.classList.remove('copied'); }, 1800);
+    }).catch(() => prompt('Copy this citation:', cites[current]));
+  });
+
+  const textEl = document.createElement('div');
+  textEl.className = 'cite-text';
+  textEl.textContent = cites.lsa;
+
+  section.appendChild(header);
+  section.appendChild(textEl);
+  return section;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  URL state encoding / decoding
+// ═══════════════════════════════════════════════════════════
+
+function encodeState() {
+  const n = document.getElementById('sample-n').value || '30';
+  const parts = ['n=' + encodeURIComponent(n)];
+
+  for (const [axId, st] of Object.entries(axisState)) {
+    if (st.mode === 'off') continue;
+    if (st.mode === 'balance') {
+      parts.push(encodeURIComponent(axId) + '=balance');
+    } else if (st.mode === 'filter' && st.sel.size > 0) {
+      const vals = [...st.sel].map(v => encodeURIComponent(v)).join(',');
+      parts.push(encodeURIComponent(axId) + '=filter:' + vals);
+    }
+  }
+
+  return location.pathname + '?' + parts.join('&');
+}
+
+function parseUrlState() {
+  if (!location.search) return null;
+  const params = new URLSearchParams(location.search);
+  const result = { n: null, axes: {} };
+
+  for (const [key, val] of params) {
+    if (key === 'n') {
+      result.n = parseInt(val) || null;
+    } else if (val === 'balance') {
+      result.axes[key] = { mode: 'balance', sel: [] };
+    } else if (val.startsWith('filter:')) {
+      const sel = val.slice(7).split(',').map(decodeURIComponent).filter(Boolean);
+      result.axes[key] = { mode: 'filter', sel };
+    }
+  }
+
+  return (result.n || Object.keys(result.axes).length) ? result : null;
+}
+
+function applyUrlState(urlState) {
+  if (!urlState) return;
+
+  if (urlState.n) document.getElementById('sample-n').value = urlState.n;
+
+  for (const [axId, cfg] of Object.entries(urlState.axes)) {
+    if (!axisState[axId]) continue;
+    const wrap    = document.getElementById('axis-' + axId);
+    if (!wrap) continue;
+    const modeRow = wrap.querySelector('.mode-row');
+
+    setMode(axId, cfg.mode, wrap, modeRow);
+
+    if (cfg.mode === 'filter' && cfg.sel.length > 0) {
+      const list = document.getElementById('optlist-' + axId);
+      if (list) {
+        cfg.sel.forEach(v => {
+          axisState[axId].sel.add(v);
+          const cb = list.querySelector(`input[value=${CSS.escape(v)}]`);
+          if (cb) cb.checked = true;
+        });
+        updateAxisSummary(axId);
+      }
+    }
+  }
+
+  updatePoolNote();
+}
+
+function copyLink() {
+  const url = location.origin + encodeState();
+  const btn = document.getElementById('link-btn');
+
+  navigator.clipboard.writeText(url).then(() => {
+    btn.textContent = '✓ Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '⛓ Link'; btn.classList.remove('copied'); }, 1800);
+  }).catch(() => {
+    // Fallback for file:// or restricted contexts
+    prompt('Copy this link:', url);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Export
+// ═══════════════════════════════════════════════════════════
+
+function exportCSV() {
+  const headers = ['#','Name','Glottocode','ISO639-3','Macroarea','Family','FamilySize','FamilySizeBin','Endangerment','MED','Countries'];
+  const q = s => `"${String(s||'').replace(/"/g,'""')}"`;
+  const rows = lastSample.map((l, i) => [
+    i+1, l.name, l.id, l.iso, l.macroarea, l.familyName,
+    l.famSize, l.famSizeBin, l.aes, l.med, l.countries.join(';'),
+  ].map(q).join(','));
+
+  const csv  = [headers.map(q).join(','), ...rows].join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `language_sample_${Date.now()}.csv`;
+  a.click();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Init
+// ═══════════════════════════════════════════════════════════
+
+function setStatus(msg, isError) {
+  const el = document.getElementById('status-area');
+  el.innerHTML = `<div class="status-bar ${isError ? 'status-error' : 'status-info'}">${esc(msg)}</div>`;
+}
+
+async function init() {
+  const urlState = parseUrlState();
+
+  try {
+    const count = await loadData();
+    setStatus(`Loaded ${count.toLocaleString()} languages from Glottolog.`, false);
+    buildUI();
+
+    if (urlState) applyUrlState(urlState);
+
+    document.getElementById('gen-btn').addEventListener('click', generate);
+    document.getElementById('sample-n').addEventListener('input', updatePoolNote);
+    document.getElementById('link-btn').addEventListener('click', copyLink);
+  } catch (err) {
+    document.getElementById('axes-container').innerHTML = '';
+    setStatus('Failed to load Glottolog data. Check your connection and reload. (' + err.message + ')', true);
+    console.error(err);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
