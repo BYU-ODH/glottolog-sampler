@@ -1,8 +1,8 @@
-# Glottolog Language Sampler — Project Context
+# Sample Instrument for Linguistic Typology (SILT) — Project Context
 
 ## What it is
 
-A single-file vanilla HTML/CSS/JS web app (`glottolog-sampler.html`) that fetches language data from the [Glottolog CLDF dataset](https://github.com/glottolog/glottolog-cldf) and lets the user draw a representative sample of languages across six typological/geographic axes.
+A single-file vanilla HTML/CSS/JS web app (`docs/index.html`) that fetches language data from the [Glottolog CLDF dataset](https://github.com/glottolog/glottolog-cldf) and lets the user draw a representative sample of languages across six typological/geographic axes.
 
 No build step, no server required — open the file in a browser.
 

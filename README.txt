@@ -1,17 +1,17 @@
-Glottolog Language Sampler
+Sample Instrument for Linguistic Typology (SILT)
 ==========================
 
 A single-file web app for drawing representative language samples from the
 Glottolog database, distributed across six typological and geographic axes.
 
-No installation or build step required — open glottolog-sampler.html in any
+No installation or build step required — open docs/index.html in any
 modern browser. Data is fetched live from the Glottolog CLDF dataset on GitHub.
 
 
 USAGE
 -----
 
-1. Open glottolog-sampler.html in a browser.
+1. Open docs/index.html in a browser.
 2. Wait for Glottolog data to load (~3–5 seconds).
 3. For each axis, choose a mode:
      Off     — axis is ignored
