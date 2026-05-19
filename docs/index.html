@@ -203,10 +203,10 @@ const FALLBACK_URLS = ['cldf/languages.csv'];
 const FALLBACK_VALUES_URLS = ['cldf/values.csv'];
 const CANONICAL_MACROAREAS = ['Africa','Australia','Eurasia','North America','Papunesia','South America'];
 
-const AES_ORDER = ['not endangered','threatened','shifting','moribund','nearly extinct','sleeping','dormant'];
+const AES_ORDER = ['not endangered','threatened','shifting','moribund','nearly extinct','sleeping/dormant'];
 const AES_COLORS = {
   'not endangered':'#166534','threatened':'#3f6212','shifting':'#854d0e',
-  'moribund':'#9a3412','nearly extinct':'#7f1d1d','sleeping':'#581c87','dormant':'#1e3a5f',
+  'moribund':'#9a3412','nearly extinct':'#7f1d1d','sleeping/dormant':'#581c87',
   'unknown':'#6b7280',
 };
 
@@ -235,7 +235,6 @@ let familySizes = {};    // familyId → count
 let axisState = {};      // axisId → {mode:'off'|'filter'|'balance', sel:Set}
 let lastSample = [];
 let includeIsolates = true;
-let familyCountNote = '';
 
 // ═══════════════════════════════════════════════════════════
 //  CSV parser (RFC-4180 compliant)
@@ -320,8 +319,9 @@ const AES_ALIASES = {
   '3':'shifting','aes-3':'shifting',
   '4':'moribund','aes-4':'moribund',
   '5':'nearly extinct','aes-5':'nearly extinct',
-  '6':'sleeping','6a':'sleeping','aes-6':'sleeping','aes-6a':'sleeping','extinct':'sleeping',
-  '7':'dormant','aes-7':'dormant',
+  '6':'sleeping/dormant','6a':'sleeping/dormant','aes-6':'sleeping/dormant','aes-6a':'sleeping/dormant',
+  '7':'sleeping/dormant','aes-7':'sleeping/dormant',
+  'extinct':'sleeping/dormant','sleeping':'sleeping/dormant','dormant':'sleeping/dormant',
 };
 
 function normalizeAES(raw) {
@@ -429,7 +429,7 @@ async function loadData() {
     const familyId   = pick(l, 'Family_ID', 'family_id') || null;
     const familyName = familyId
       ? (familyNames[familyId] || familyId)
-      : 'Isolate';
+      : `Isolate: ${name}`;
     const famSize    = familyId ? (fCount[familyId] || 1) : 1;
 
     // AES: prefer values.csv, then languages.csv columns
@@ -454,11 +454,6 @@ async function loadData() {
       countries,
     };
   }).filter(Boolean).filter(l => l.macroarea !== null);
-
-  const isolateCount = langs.filter(l => l.familyId === null).length;
-  const familyCount = new Set(langs.filter(l => l.familyId !== null).map(l => l.familyId)).size;
-  const totalCount = familyCount + isolateCount;
-  familyCountNote = `Family check: ${familyCount} families + ${isolateCount} isolates = ${totalCount} (target 246 + 183 = 429).`;
 
   recomputeFamilySizes();
 
@@ -1096,7 +1091,7 @@ function parseUrlState() {
       result.axes[key] = { mode: 'balance', sel: [] };
     } else if (val.startsWith('filter:')) {
       const sel = val.slice(7).split(',').map(decodeURIComponent).filter(Boolean)
-        .map(v => v === 'extinct' ? 'sleeping' : v);
+        .map(v => (v === 'extinct' || v === 'sleeping' || v === 'dormant') ? 'sleeping/dormant' : v);
       result.axes[key] = { mode: 'filter', sel };
     }
   }
@@ -1128,7 +1123,7 @@ function applyUrlState(urlState) {
       const list = document.getElementById('optlist-' + axId);
       if (list) {
         cfg.sel.forEach(v => {
-          const next = v === 'extinct' ? 'sleeping' : v;
+          const next = (v === 'extinct' || v === 'sleeping' || v === 'dormant') ? 'sleeping/dormant' : v;
           axisState[axId].sel.add(next);
           const cb = list.querySelector(`input[value=${CSS.escape(next)}]`);
           if (cb) cb.checked = true;
@@ -1235,9 +1230,11 @@ function importCSV(file) {
         const state  = { n: null, axes: {} };
         for (const [key, val] of params) {
           if (key === 'n') state.n = parseInt(val) || null;
+          else if (key === 'isolates') state.isolates = val === 'exclude' ? false : true;
           else if (val === 'balance') state.axes[key] = { mode:'balance', sel:[] };
           else if (val.startsWith('filter:')) {
-            const sel = val.slice(7).split(',').map(decodeURIComponent).filter(Boolean);
+            const sel = val.slice(7).split(',').map(decodeURIComponent).filter(Boolean)
+              .map(v => (v === 'extinct' || v === 'sleeping' || v === 'dormant') ? 'sleeping/dormant' : v);
             state.axes[key] = { mode:'filter', sel };
           }
         }
@@ -1344,11 +1341,11 @@ async function init() {
     const count = await loadData();
     if (usedCachedData) {
       setStatus(
-        `Could not reach Glottolog — loaded ${count.toLocaleString()} languages from a cached copy vendored with this app. The cached data may be out of date; please contact the developers to fix the data fetching function. ${familyCountNote}`,
+        `Could not reach Glottolog — loaded ${count.toLocaleString()} languages from a cached copy vendored with this app. The cached data may be out of date; please contact the developers to fix the data fetching function.`,
         'warn'
       );
     } else {
-      setStatus(`Loaded ${count.toLocaleString()} languages from Glottolog. ${familyCountNote}`, 'info');
+      setStatus(`Loaded ${count.toLocaleString()} languages from Glottolog.`, 'info');
     }
     buildUI();
 
