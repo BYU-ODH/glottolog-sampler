@@ -33,14 +33,26 @@
 
     /* ── Axis ── */
     .axis { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; }
-    .axis-head { display: flex; align-items: center; padding: 7px 10px; cursor: pointer; gap: 8px; user-select: none; }
+    .axis-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-areas:
+        'label summary chevron'
+        'mode mode mode';
+      align-items: center;
+      row-gap: 6px;
+      column-gap: 8px;
+      padding: 7px 10px;
+      cursor: pointer;
+      user-select: none;
+    }
     .axis-head:hover { background: #f8f9fb; }
-    .axis-label { font-weight: 600; flex: 1; }
-    .axis-summary { font-size: 0.75rem; color: var(--muted); margin-right: 6px; }
-    .chevron { font-size: 0.7rem; color: var(--muted); transition: transform .15s; }
+    .axis-label { grid-area: label; font-weight: 600; min-width: 0; line-height: 1.15; }
+    .axis-summary { grid-area: summary; font-size: 0.75rem; color: var(--muted); line-height: 1.15; }
+    .chevron { grid-area: chevron; font-size: 0.7rem; color: var(--muted); transition: transform .15s; justify-self: end; }
     .axis.open .chevron { transform: rotate(90deg); }
 
-    .mode-row { display: flex; gap: 2px; }
+    .mode-row { grid-area: mode; display: flex; gap: 2px; justify-self: end; }
     .mode-btn { font-size: 0.7rem; padding: 2px 7px; border: 1px solid var(--border); border-radius: 4px; background: #fff; color: var(--muted); cursor: pointer; white-space: nowrap; }
     .mode-btn.active-off   { background: #f3f4f6; color: var(--muted); border-color: #d1d5db; }
     .mode-btn.active-filter{ background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
