@@ -165,6 +165,12 @@
       <button class="link-btn" id="import-btn" title="Import a previously-exported CSV to selectively resample rows">⇪ Import CSV</button>
       <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
     </div>
+    <div class="bottom-row" style="margin-top:4px;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.82rem;color:var(--muted);">
+        <input type="checkbox" id="isolates-toggle" checked>
+        Include language isolates
+      </label>
+    </div>
   </div>
 
   <!-- ── Results panel ── -->
@@ -195,11 +201,12 @@ const VALUES_URLS = [
 // pre-filtered to only the parameters this app reads (aes, med).
 const FALLBACK_URLS = ['cldf/languages.csv'];
 const FALLBACK_VALUES_URLS = ['cldf/values.csv'];
+const CANONICAL_MACROAREAS = ['Africa','Australia','Eurasia','North America','Papunesia','South America'];
 
-const AES_ORDER = ['not endangered','threatened','shifting','moribund','nearly extinct','extinct','dormant'];
+const AES_ORDER = ['not endangered','threatened','shifting','moribund','nearly extinct','sleeping','dormant'];
 const AES_COLORS = {
   'not endangered':'#166534','threatened':'#3f6212','shifting':'#854d0e',
-  'moribund':'#9a3412','nearly extinct':'#7f1d1d','extinct':'#581c87','dormant':'#1e3a5f',
+  'moribund':'#9a3412','nearly extinct':'#7f1d1d','sleeping':'#581c87','dormant':'#1e3a5f',
   'unknown':'#6b7280',
 };
 
@@ -227,6 +234,8 @@ let familyNames = {};    // familyId → name
 let familySizes = {};    // familyId → count
 let axisState = {};      // axisId → {mode:'off'|'filter'|'balance', sel:Set}
 let lastSample = [];
+let includeIsolates = true;
+let familyCountNote = '';
 
 // ═══════════════════════════════════════════════════════════
 //  CSV parser (RFC-4180 compliant)
@@ -285,6 +294,21 @@ function pick(obj, ...keys) {
   return '';
 }
 
+function normalizeMacroarea(raw) {
+  if (!raw) return null;
+  const s = raw.trim();
+  for (const m of CANONICAL_MACROAREAS) if (s === m) return m;
+
+  const lower = s.toLowerCase();
+  for (const m of CANONICAL_MACROAREAS) if (m.toLowerCase() === lower) return m;
+
+  const parts = s.split(/[;,|/\\]+/).map(x => x.trim()).filter(Boolean);
+  for (const part of parts) {
+    for (const m of CANONICAL_MACROAREAS) if (part === m || part.toLowerCase() === m.toLowerCase()) return m;
+  }
+  return null;
+}
+
 function getFamilySizeBin(n) {
   for (const b of FSIZE_BINS) if (n >= b.min && n <= b.max) return b.label;
   return 'Unknown';
@@ -296,7 +320,7 @@ const AES_ALIASES = {
   '3':'shifting','aes-3':'shifting',
   '4':'moribund','aes-4':'moribund',
   '5':'nearly extinct','aes-5':'nearly extinct',
-  '6':'extinct','6a':'extinct','aes-6':'extinct','aes-6a':'extinct',
+  '6':'sleeping','6a':'sleeping','aes-6':'sleeping','aes-6a':'sleeping','extinct':'sleeping',
   '7':'dormant','aes-7':'dormant',
 };
 
@@ -311,6 +335,21 @@ function normalizeMED(raw) {
   const s = raw.toLowerCase().trim();
   for (const level of MED_ORDER) if (s.includes(level.split(' ')[0]) || s === level) return level;
   return s || 'unknown';
+}
+
+function recomputeFamilySizes() {
+  const pool = includeIsolates ? langs : langs.filter(l => l.familyId !== null);
+  const fCount = {};
+  pool.forEach(l => {
+    const fid = l.familyId || l.id;
+    fCount[fid] = (fCount[fid] || 0) + 1;
+  });
+  familySizes = fCount;
+  langs.forEach(l => {
+    const fid = l.familyId || l.id;
+    l.famSize = fCount[fid] || 1;
+    l.famSizeBin = getFamilySizeBin(l.famSize);
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -404,7 +443,7 @@ async function loadData() {
     return {
       id,
       name,
-      macroarea:    pick(l,'Macroarea','macroarea') || 'Unknown',
+      macroarea:    normalizeMacroarea(pick(l,'Macroarea','macroarea')),
       iso:          pick(l,'ISO639P3code','ISO_code','iso','iso639p3code') || '',
       familyId,
       familyName,
@@ -414,7 +453,14 @@ async function loadData() {
       med:          rawMed || 'unknown',
       countries,
     };
-  }).filter(Boolean);
+  }).filter(Boolean).filter(l => l.macroarea !== null);
+
+  const isolateCount = langs.filter(l => l.familyId === null).length;
+  const familyCount = new Set(langs.filter(l => l.familyId !== null).map(l => l.familyId)).size;
+  const totalCount = familyCount + isolateCount;
+  familyCountNote = `Family check: ${familyCount} families + ${isolateCount} isolates = ${totalCount} (target 246 + 183 = 429).`;
+
+  recomputeFamilySizes();
 
   langById = {};
   langs.forEach(l => { langById[l.id] = l; });
@@ -433,32 +479,34 @@ function countBy(arr, fn) {
 }
 
 function buildUI() {
+  const uiLangs = includeIsolates ? langs : langs.filter(l => l.familyId !== null);
+
   // Compute axis options
-  const macroareas = [...new Set(langs.map(l=>l.macroarea))].sort();
+  const macroareas = CANONICAL_MACROAREAS.filter(m => uiLangs.some(l => l.macroarea === m));
 
   // Family: sort by size desc
-  const famCounts = countBy(langs, l=>l.familyName);
+  const famCounts = countBy(uiLangs, l=>l.familyName);
   const families  = Object.keys(famCounts).sort((a,b)=>famCounts[b]-famCounts[a]);
   const top20Fam  = families.slice(0, 20);
 
-  const fsizeBins = FSIZE_BINS.map(b=>b.label).filter(b=>langs.some(l=>l.famSizeBin===b));
+  const fsizeBins = FSIZE_BINS.map(b=>b.label).filter(b=>uiLangs.some(l=>l.famSizeBin===b));
 
   const ctryCounts = {};
-  langs.forEach(l=>l.countries.forEach(c=>{ ctryCounts[c]=(ctryCounts[c]||0)+1; }));
+  uiLangs.forEach(l=>l.countries.forEach(c=>{ ctryCounts[c]=(ctryCounts[c]||0)+1; }));
   const countries = Object.keys(ctryCounts).sort((a,b)=>ctryCounts[b]-ctryCounts[a]);
 
-  const aesLevels = AES_ORDER.filter(a=>langs.some(l=>l.aes===a));
+  const aesLevels = AES_ORDER.filter(a=>uiLangs.some(l=>l.aes===a));
   // Add 'unknown' if present
-  if (langs.some(l=>l.aes==='unknown')) aesLevels.push('unknown');
+  if (uiLangs.some(l=>l.aes==='unknown')) aesLevels.push('unknown');
 
-  const medLevels = MED_ORDER.filter(m=>langs.some(l=>l.med===m));
-  if (langs.some(l=>l.med==='unknown')) medLevels.push('unknown');
+  const medLevels = MED_ORDER.filter(m=>uiLangs.some(l=>l.med===m));
+  if (uiLangs.some(l=>l.med==='unknown')) medLevels.push('unknown');
 
   const AXES = [
     {
       id: 'macroarea', name: 'Macroarea',
       options: macroareas,
-      counts: countBy(langs, l=>l.macroarea),
+      counts: countBy(uiLangs, l=>l.macroarea),
     },
     {
       id: 'familyName', name: 'Family',
@@ -474,7 +522,7 @@ function buildUI() {
     {
       id: 'famSizeBin', name: 'Family Size',
       options: fsizeBins,
-      counts: countBy(langs, l=>l.famSizeBin),
+      counts: countBy(uiLangs, l=>l.famSizeBin),
     },
     {
       id: 'countries', name: 'Country',
@@ -486,13 +534,13 @@ function buildUI() {
     {
       id: 'aes', name: 'Endangerment',
       options: aesLevels,
-      counts: countBy(langs, l=>l.aes),
+      counts: countBy(uiLangs, l=>l.aes),
       colors: AES_COLORS,
     },
     {
       id: 'med', name: 'Documentation (MED)',
       options: medLevels,
-      counts: countBy(langs, l=>l.med),
+      counts: countBy(uiLangs, l=>l.med),
     },
   ];
 
@@ -503,6 +551,9 @@ function buildUI() {
   const container = document.getElementById('axes-container');
   container.innerHTML = '';
   AXES.forEach(ax => container.appendChild(makeAxisEl(ax)));
+
+  const isolatesToggle = document.getElementById('isolates-toggle');
+  if (isolatesToggle) isolatesToggle.checked = includeIsolates;
 
   document.getElementById('gen-btn').disabled = false;
   updatePoolNote();
@@ -727,6 +778,7 @@ function langMatchesAxis(lang, axId, sel) {
 
 function getFilteredPool() {
   return langs.filter(lang => {
+    if (!includeIsolates && lang.familyId === null) return false;
     for (const [axId, st] of Object.entries(axisState)) {
       if (st.mode === 'filter' && st.sel.size > 0) {
         if (!langMatchesAxis(lang, axId, st.sel)) return false;
@@ -1015,6 +1067,7 @@ function buildCiteSection() {
 function encodeState() {
   const n = document.getElementById('sample-n').value || '30';
   const parts = ['n=' + encodeURIComponent(n)];
+  if (!includeIsolates) parts.push('isolates=exclude');
 
   for (const [axId, st] of Object.entries(axisState)) {
     if (st.mode === 'off') continue;
@@ -1037,21 +1090,31 @@ function parseUrlState() {
   for (const [key, val] of params) {
     if (key === 'n') {
       result.n = parseInt(val) || null;
+    } else if (key === 'isolates') {
+      result.isolates = val === 'exclude' ? false : true;
     } else if (val === 'balance') {
       result.axes[key] = { mode: 'balance', sel: [] };
     } else if (val.startsWith('filter:')) {
-      const sel = val.slice(7).split(',').map(decodeURIComponent).filter(Boolean);
+      const sel = val.slice(7).split(',').map(decodeURIComponent).filter(Boolean)
+        .map(v => v === 'extinct' ? 'sleeping' : v);
       result.axes[key] = { mode: 'filter', sel };
     }
   }
 
-  return (result.n || Object.keys(result.axes).length) ? result : null;
+  return (result.n || Object.keys(result.axes).length || typeof result.isolates === 'boolean') ? result : null;
 }
 
 function applyUrlState(urlState) {
   if (!urlState) return;
 
   if (urlState.n) document.getElementById('sample-n').value = urlState.n;
+  if (typeof urlState.isolates === 'boolean') {
+    includeIsolates = urlState.isolates;
+    recomputeFamilySizes();
+    const tog = document.getElementById('isolates-toggle');
+    if (tog) tog.checked = includeIsolates;
+    buildUI();
+  }
 
   for (const [axId, cfg] of Object.entries(urlState.axes)) {
     if (!axisState[axId]) continue;
@@ -1065,8 +1128,9 @@ function applyUrlState(urlState) {
       const list = document.getElementById('optlist-' + axId);
       if (list) {
         cfg.sel.forEach(v => {
-          axisState[axId].sel.add(v);
-          const cb = list.querySelector(`input[value=${CSS.escape(v)}]`);
+          const next = v === 'extinct' ? 'sleeping' : v;
+          axisState[axId].sel.add(next);
+          const cb = list.querySelector(`input[value=${CSS.escape(next)}]`);
           if (cb) cb.checked = true;
         });
         updateAxisSummary(axId);
@@ -1280,11 +1344,11 @@ async function init() {
     const count = await loadData();
     if (usedCachedData) {
       setStatus(
-        `Could not reach Glottolog — loaded ${count.toLocaleString()} languages from a cached copy vendored with this app. The cached data may be out of date; please contact the developers to fix the data fetching function.`,
+        `Could not reach Glottolog — loaded ${count.toLocaleString()} languages from a cached copy vendored with this app. The cached data may be out of date; please contact the developers to fix the data fetching function. ${familyCountNote}`,
         'warn'
       );
     } else {
-      setStatus(`Loaded ${count.toLocaleString()} languages from Glottolog.`, 'info');
+      setStatus(`Loaded ${count.toLocaleString()} languages from Glottolog. ${familyCountNote}`, 'info');
     }
     buildUI();
 
@@ -1300,6 +1364,15 @@ async function init() {
       if (fileInput.files[0]) importCSV(fileInput.files[0]);
       fileInput.value = '';
     });
+
+    const isolatesToggle = document.getElementById('isolates-toggle');
+    if (isolatesToggle) {
+      isolatesToggle.addEventListener('change', () => {
+        includeIsolates = isolatesToggle.checked;
+        recomputeFamilySizes();
+        buildUI();
+      });
+    }
   } catch (err) {
     document.getElementById('axes-container').innerHTML = '';
     setStatus('Failed to load Glottolog data. Check your connection and reload. (' + err.message + ')', 'error');
