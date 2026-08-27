@@ -92,7 +92,23 @@
     .pool-note { font-size: 0.75rem; color: var(--muted); margin-top: 6px; text-align: right; }
 
     /* ── Status ── */
-    .status-bar { padding: 8px 12px; border-radius: 5px; font-size: 0.8rem; margin-bottom: 10px; }
+    .status-bar { padding: 8px 12px; border-radius: 5px; font-size: 0.8rem; margin-bottom: 10px; display: flex; align-items: flex-start; gap: 8px; }
+    .status-msg { flex: 1; min-width: 0; }
+    .status-help { position: relative; flex-shrink: 0; line-height: 1; }
+    .status-help-btn { width: 16px; height: 16px; padding: 0; border: 1px solid currentColor; border-radius: 50%;
+                       background: transparent; color: inherit; font: 700 0.68rem/1 inherit; cursor: help; opacity: .65;
+                       display: flex; align-items: center; justify-content: center; }
+    .status-help-btn:hover, .status-help-btn:focus-visible { opacity: 1; }
+    .status-help-tip { display: none; position: absolute; right: 0; top: 22px; z-index: 50; width: 340px;
+                       max-width: min(340px, calc(100vw - 48px)); padding: 10px 12px; border-radius: 6px;
+                       background: #1f2937; color: #f9fafb; font-size: 0.75rem; font-weight: 400; line-height: 1.5;
+                       text-align: left; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+    .status-help:hover .status-help-tip, .status-help:focus-within .status-help-tip { display: block; }
+    .status-help-tip a { color: #93c5fd; }
+    .status-help-tip p { margin: 0 0 6px; }
+    .status-help-tip ul { margin: 0; padding-left: 16px; }
+    .status-help-tip li { margin-bottom: 3px; }
+    .status-help-tip li:last-child { margin-bottom: 0; }
     .status-info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
     .status-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
     .status-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
@@ -371,11 +387,12 @@ function recomputeFamilySizes() {
 //  Data loading
 // ═══════════════════════════════════════════════════════════
 
+// Returns { text, url } for the first URL that responds, or null if all fail.
 async function fetchFirst(urls) {
   for (const url of urls) {
     try {
       const r = await fetch(url);
-      if (r.ok) return await r.text();
+      if (r.ok) return { text: await r.text(), url };
     } catch {}
   }
   return null;
@@ -384,20 +401,31 @@ async function fetchFirst(urls) {
 // Exposed so init() can warn the user when cached data is in use.
 let usedCachedData = false;
 
+// Provenance + exclusion tallies, surfaced in the status-bar help tooltip.
+let dataStats = {
+  sourceUrl: null, valuesUrl: null,
+  languageRows: 0, bookkeeping: 0, noMacroarea: 0, incomplete: 0, kept: 0,
+};
+
 async function loadData() {
-  let [langsText, valsText] = await Promise.all([
+  let [langsRes, valsRes] = await Promise.all([
     fetchFirst(URLS),
     fetchFirst(VALUES_URLS),
   ]);
 
-  if (!langsText) {
+  if (!langsRes) {
     const cached = await fetchFirst(FALLBACK_URLS);
     if (cached) {
-      langsText = cached;
+      langsRes = cached;
       usedCachedData = true;
-      if (!valsText) valsText = await fetchFirst(FALLBACK_VALUES_URLS);
+      if (!valsRes) valsRes = await fetchFirst(FALLBACK_VALUES_URLS);
     }
   }
+
+  const langsText = langsRes && langsRes.text;
+  const valsText  = valsRes  && valsRes.text;
+  dataStats.sourceUrl = langsRes ? langsRes.url : null;
+  dataStats.valuesUrl = valsRes  ? valsRes.url  : null;
 
   if (!langsText) throw new Error('Could not fetch languages.csv from Glottolog GitHub or local cache.');
 
@@ -426,9 +454,13 @@ async function loadData() {
   });
 
   // Build language objects, dropping Glottolog's Bookkeeping pseudo-family
-  const rawLangs = rows
-    .filter(r => (pick(r,'Level','level') || '').toLowerCase() === 'language')
-    .filter(r => pick(r, 'Family_ID', 'family_id') !== BOOKKEEPING_ID);
+  const languageRows = rows.filter(r => (pick(r,'Level','level') || '').toLowerCase() === 'language');
+  const rawLangs = languageRows.filter(r => pick(r, 'Family_ID', 'family_id') !== BOOKKEEPING_ID);
+
+  dataStats.languageRows = languageRows.length;
+  dataStats.bookkeeping  = languageRows.length - rawLangs.length;
+  dataStats.incomplete   = 0;
+  dataStats.noMacroarea  = 0;
 
   // Count languages per family
   const fCount = {};
@@ -441,7 +473,7 @@ async function loadData() {
   langs = rawLangs.map(l => {
     const id    = pick(l, 'ID', 'Glottocode', 'glottocode');
     const name  = pick(l, 'Name', 'name');
-    if (!id || !name) return null;
+    if (!id || !name) { dataStats.incomplete++; return null; }
 
     const familyId   = pick(l, 'Family_ID', 'family_id') || null;
     const familyName = familyId
@@ -470,7 +502,12 @@ async function loadData() {
       med:          rawMed || 'unknown',
       countries,
     };
-  }).filter(Boolean).filter(l => l.macroarea !== null);
+  }).filter(Boolean).filter(l => {
+    if (l.macroarea === null) { dataStats.noMacroarea++; return false; }
+    return true;
+  });
+
+  dataStats.kept = langs.length;
 
   recomputeFamilySizes();
 
@@ -917,6 +954,7 @@ function showResults(sample, poolSize, balAxes) {
             <th style="width:1%"><input type="checkbox" id="resample-all" title="Toggle all"></th>
             <th>#</th>
             <th>Language</th>
+            <th>ISO 639-3</th>
             <th>Glottocode</th>
             <th>Macroarea</th>
             <th>Family</th>
@@ -943,6 +981,7 @@ function showResults(sample, poolSize, balAxes) {
       <td><input type="checkbox" class="resample-row" data-idx="${i}"></td>
       <td style="color:var(--muted)">${i+1}</td>
       <td><span class="lang-name">${esc(lang.name)}</span></td>
+      <td><span class="lang-code">${lang.iso ? esc(lang.iso) : '<span style="color:var(--muted)">—</span>'}</span></td>
       <td><a href="https://glottolog.org/resource/languoid/id/${esc(lang.id)}" target="_blank" style="color:var(--primary);text-decoration:none;" class="lang-code">${esc(lang.id)}</a></td>
       <td>${esc(lang.macroarea)}</td>
       <td>${esc(lang.familyName)}</td>
@@ -1345,10 +1384,41 @@ function exportCSV() {
 //  Init
 // ═══════════════════════════════════════════════════════════
 
+// Provenance + exclusions, shown on hover/focus of the status-bar "?" icon.
+function buildStatusHelp() {
+  const d = dataStats;
+  const n = x => x.toLocaleString();
+  const src = !d.sourceUrl
+    ? '<em>not loaded</em>'
+    : usedCachedData
+      ? `the copy vendored with this app (<code>${esc(d.sourceUrl)}</code>), because Glottolog could not be reached`
+      : `<a href="${esc(d.sourceUrl)}" target="_blank" rel="noopener">${esc(d.sourceUrl)}</a>`;
+  const excluded = d.bookkeeping + d.noMacroarea + d.incomplete;
+
+  const reasons = [
+    d.bookkeeping ? `<li><strong>${n(d.bookkeeping)}</strong> in Glottolog's <em>Bookkeeping</em> family (<code>book1242</code>) — retired, spurious or non-language codes kept only for reference.</li>` : '',
+    d.noMacroarea ? `<li><strong>${n(d.noMacroarea)}</strong> with no macroarea assigned, so they cannot be placed on the geographic axis.</li>` : '',
+    d.incomplete  ? `<li><strong>${n(d.incomplete)}</strong> missing a glottocode or a name.</li>` : '',
+  ].filter(Boolean).join('');
+
+  return `
+    <span class="status-help">
+      <button type="button" class="status-help-btn" aria-label="About this data">?</button>
+      <span class="status-help-tip" role="tooltip">
+        <p><strong>Data source.</strong> The <a href="https://github.com/glottolog/glottolog-cldf" target="_blank" rel="noopener">Glottolog CLDF dataset</a>, fetched at page load from ${src}${d.valuesUrl ? ', plus the matching <code>values.csv</code> for endangerment (AES) and documentation (MED) levels' : ''}.</p>
+        ${d.languageRows ? `<p><strong>Sampling pool.</strong> Only <code>Level = language</code> rows are used: ${n(d.languageRows)} rows, of which <strong>${n(excluded)}</strong> are excluded, leaving <strong>${n(d.kept)}</strong> sampleable languages.</p>` : ''}
+        ${reasons ? `<p style="margin-bottom:4px"><strong>Excluded:</strong></p><ul>${reasons}</ul>` : ''}
+      </span>
+    </span>`;
+}
+
 function setStatus(msg, kind) {
   const el = document.getElementById('status-area');
   const cls = kind === 'error' ? 'status-error' : kind === 'warn' ? 'status-warn' : 'status-info';
-  el.innerHTML = `<div class="status-bar ${cls}">${esc(msg)}</div>`;
+  el.innerHTML = `<div class="status-bar ${cls}">` +
+                 `<span class="status-msg">${esc(msg)}</span>` +
+                 buildStatusHelp() +
+                 `</div>`;
 }
 
 async function init() {
