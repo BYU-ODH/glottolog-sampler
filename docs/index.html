@@ -242,6 +242,9 @@ const FSIZE_BINS = [
 
 let langs = [];          // processed language objects
 let langById = {};       // glottocode → language object
+// Glottolog's "Bookkeeping" pseudo-family: retired/spurious codes, not real languages.
+const BOOKKEEPING_ID = 'book1242';
+
 let familyNames = {};    // familyId → name
 let familySizes = {};    // familyId → count
 let axisState = {};      // axisId → {mode:'off'|'filter'|'balance', sel:Set}
@@ -419,11 +422,13 @@ async function loadData() {
   const familyRows = rows.filter(r => (pick(r,'Level','level') || '').toLowerCase() === 'family');
   familyRows.forEach(f => {
     const id = pick(f, 'ID', 'Glottocode');
-    if (id) familyNames[id] = pick(f, 'Name', 'name') || id;
+    if (id && id !== BOOKKEEPING_ID) familyNames[id] = pick(f, 'Name', 'name') || id;
   });
 
-  // Build language objects
-  const rawLangs = rows.filter(r => (pick(r,'Level','level') || '').toLowerCase() === 'language');
+  // Build language objects, dropping Glottolog's Bookkeeping pseudo-family
+  const rawLangs = rows
+    .filter(r => (pick(r,'Level','level') || '').toLowerCase() === 'language')
+    .filter(r => pick(r, 'Family_ID', 'family_id') !== BOOKKEEPING_ID);
 
   // Count languages per family
   const fCount = {};
